@@ -1,0 +1,10 @@
+name: nyxus-napari
+contributions:
+  commands:
+    - id: nyxus-napari.say_hi
+      title: Say hello, world!
+      python_name: nyxus_napari:show_hello_message
+  widgets:
+    - command: nyxus-napari.say_hi  # note, same as command.id above
+      display_name: Hello World
+      autogenerate: true
