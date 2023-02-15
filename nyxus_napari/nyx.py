@@ -1,6 +1,3 @@
-
-# example_plugin.some_module
-#from types import UnionType
 from typing import Union
 from qtpy.QtWidgets import QWidget
 import napari
@@ -26,21 +23,18 @@ class Features(Enum):
 
 Widget = Union["magicgui.widgets.Widget", "qtpy.QtWidgets.QWidget"]
 
-        
-
 @magic_factory
 def widget_factory(
     viewer: napari.Viewer,
     Intensity: Image, 
     Segmentation: Image,
     Features: Features,
+    Save_to_csv: bool = True,
     Output_path: "str" = "",
     Neighbor_distance: float = 5.0,
     Pixels_per_micron: float = 1.0,
     Coarse_gray_depth: int = 256, 
-    Number_of_calculation_threads: int = 4,
-    Number_of_loader_threads: int = 1,
-    Use_GPU: bool = False,
+    Use_CUDA_Enabled_GPU: bool = False,
     GPU_id: int = 0):
     
     #wait for function call to load large modules
@@ -52,15 +46,25 @@ def widget_factory(
     intensity_path = str(Intensity.source.path)
     segmentation_path = str(Segmentation.source.path)
     
+    
     nyxus_object = None
     
-    if (Use_GPU):
+    if (Use_CUDA_Enabled_GPU):
+        import subprocess
+        
+        try:
+            subprocess.check_output('nvidia-smi')
+            show_info('Nvidia GPU detected')
+        except Exception: # this command not being found can raise quite a few different errors depending on the configuration
+            show_info('No Nvidia GPU found. The machine must have a CUDA enable Nvidia GPU with drivers installed.')
+            return
+            
         nyxus_object = nyxus.Nyxus([Features.value], 
                                neighbor_distance=Neighbor_distance, 
                                pixels_per_micron=Pixels_per_micron, 
                                coarse_gray_depth=Coarse_gray_depth,
-                               n_feature_calc_threads=Number_of_calculation_threads,
-                               n_loader_threads=Number_of_loader_threads,
+                               #n_feature_calc_threads=Number_of_calculation_threads,
+                               #n_loader_threads=Number_of_loader_threads,
                                using_gpu = GPU_id)
         
     else:
@@ -68,9 +72,39 @@ def widget_factory(
                                 neighbor_distance=Neighbor_distance, 
                                 pixels_per_micron=Pixels_per_micron, 
                                 coarse_gray_depth=Coarse_gray_depth,
-                                n_feature_calc_threads=Number_of_calculation_threads,
-                                n_loader_threads=Number_of_loader_threads,
+                                #n_feature_calc_threads=Number_of_calculation_threads,
+                                #n_loader_threads=Number_of_loader_threads,
                                 using_gpu = -1)
+    
+    result = nyxus_object.featurize_memory(Intensity.data, Segmentation.data)
+    
+    """
+    if (not os.path.isfile(segmentation_path) and not os.path.isdir(segmentation_path)):
+        
+        #save and load image data until in memory api is complete
+        from PIL import Image
+        
+        if (not Segmentation.data):
+            show_info("Invalid segmentation input")
+            return
+            
+        im = Image.fromarray(Segmentation.data)
+        im.save('segmentation.tif')
+        segmentation_path = 'segmentation.tif'
+        
+    if (not os.path.isfile(intensity_path) and not os.path.isdir(intensity_path)):
+        
+        #save and load image data until in memory api is complete
+        from PIL import Image
+        
+        if (not Segmentation.data):
+            show_info("Invalid intensity input")
+            return
+            
+        im = Image.fromarray(Segmentation.data)
+        im.save('intensity.tif')
+        segmentation_path = 'intensity.tif'
+    
 
     result = None
     if (os.path.isdir(intensity_path)):
@@ -78,7 +112,6 @@ def widget_factory(
             #throw error since both must be directories
             show_info("Intensity and Segmentation must both be a directory or both be a file.")
             return 
-        
         
         filepattern = ".*"
         
@@ -95,12 +128,14 @@ def widget_factory(
     
     else:
        show_info("Invalid input type. Please load an image or directory of images.")
-        
-                    
-    result.to_csv(Output_path + 'out.csv', sep='\t', encoding='utf-8')
     
-    show_info("Saving results to " + Output_path + "out.csv")
+    """
     
+    if (Save_to_csv):
+        show_info("Saving results to " + Output_path + "out.csv")
+        result.to_csv(Output_path + 'out.csv', sep='\t', encoding='utf-8')
+    
+    # Create window for the DataFrame viewer
     win = QWidget()
     scroll = QScrollArea()
     layout = QVBoxLayout()
@@ -110,6 +145,7 @@ def widget_factory(
     win.setLayout(layout)    
     win.setWindowTitle("Feature Results")
 
+    # Add DataFrame to widget window
     table.setColumnCount(len(result.columns))
     table.setRowCount(len(result.index))
     table.setHorizontalHeaderLabels(result.columns)
@@ -117,68 +153,7 @@ def widget_factory(
         for j in range(len(result.columns)):
             table.setItem(i,j,QTableWidgetItem(str(result.iloc[i, j])))
 
-
-    
+    # add DataFrame to Viewer
     viewer.window.add_dock_widget(win)
     
     
-    #mgui_table = Table(value=result)
-
-    #widget.layout().addWidget(mgui_table.native)
-    
-    #return track
-    
-    
-        
-            
-    
-    """
-    if (filepattern == ""):
-        filepattern = ".*"
-    
-    nyxus_object = nyxus.Nyxus(['*ALL*'])
-    
-    result = nyxus_object.featurize_directory(Intensity, Segmentation, filepattern)
-    
-    result.to_csv(path + 'out.csv', sep='\t', encoding='utf-8')
-    
-    return 0
-    """
-
-
-
-
-
-"""
-from napari.utils.notifications import show_info
-import napari.viewer
-import napari
-from napari.utils import nbscreenshot
-import pprint
-
-def show_hello_message() :
-    
-    viewer = napari.Viewer()
-    
-    data = viewer.layers
-    
-    for layer in data:
-        pprint.pprint(layer)
-    
-    #pprint.pprint(data)
-
-    
-def get_data(image):
-    print("success")
-"""
-
-"""
-if (napari.viewer.layers[0].length == 0):
-    show_info("No data loaded")
-    
-data = napari.viewer.layers[0].data
-
-print(data)
-if (data.size() > 0):
-    print(data[0])
-"""
