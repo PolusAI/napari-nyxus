@@ -1,5 +1,6 @@
 from typing import Union
-from qtpy.QtWidgets import QWidget
+from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem
+from qtpy import QtCore, QtGui, QtWidgets, uic
 import napari
 from napari.layers import Image
 from napari.utils.notifications import show_info
@@ -23,6 +24,22 @@ class Features(Enum):
 
 Widget = Union["magicgui.widgets.Widget", "qtpy.QtWidgets.QWidget"]
 
+
+current_label = 1
+labels = None
+labels_added = False
+
+class FeaturesWidget(QWidget):
+    
+    @QtCore.Slot(QtWidgets.QTableWidgetItem)
+    def onClicked(self, it):
+        print('clicked')
+        state = not it.data(SelectedRole)
+        it.setData(SelectedRole, state)
+        it.setBackground(
+            QtGui.QColor(100, 100, 100) if state else QtGui.QColor(0, 0, 0)
+        )
+
 @magic_factory
 def widget_factory(
     viewer: napari.Viewer,
@@ -39,13 +56,15 @@ def widget_factory(
     
     #wait for function call to load large modules
     import pandas as pd
+    import numpy as np
     import nyxus
     import os
-    from qtpy.QtWidgets import QWidget,QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem
     
     intensity_path = str(Intensity.source.path)
     segmentation_path = str(Segmentation.source.path)
     
+    
+    #print(str(Intensity))
     
     nyxus_object = None
     
@@ -76,9 +95,8 @@ def widget_factory(
                                 #n_loader_threads=Number_of_loader_threads,
                                 using_gpu = -1)
     
-    result = nyxus_object.featurize_memory(Intensity.data, Segmentation.data)
-    
-    """
+    #result = nyxus_object.featurize_memory(Intensity.data, Segmentation.data)
+  
     if (not os.path.isfile(segmentation_path) and not os.path.isdir(segmentation_path)):
         
         #save and load image data until in memory api is complete
@@ -128,15 +146,14 @@ def widget_factory(
     
     else:
        show_info("Invalid input type. Please load an image or directory of images.")
-    
-    """
-    
+
+
     if (Save_to_csv):
         show_info("Saving results to " + Output_path + "out.csv")
         result.to_csv(Output_path + 'out.csv', sep='\t', encoding='utf-8')
     
     # Create window for the DataFrame viewer
-    win = QWidget()
+    win = FeaturesWidget()
     scroll = QScrollArea()
     layout = QVBoxLayout()
     table = QTableWidget()
@@ -153,7 +170,76 @@ def widget_factory(
         for j in range(len(result.columns)):
             table.setItem(i,j,QTableWidgetItem(str(result.iloc[i, j])))
 
+        
+    global labels
+    global current_label
+    
+    seg = Segmentation.data
+    labels = np.zeros_like(seg)
+    def highlight_value(value):
+        
+        global current_label
+        global labels
+        global labels_added
+
+        removed = False
+
+        for ix, iy in np.ndindex(seg.shape):
+
+            if (int(seg[ix, iy]) == int(value)):
+
+                if (labels[ix, iy] != 0):
+                    labels[ix, iy] = 0
+                else:
+                    labels[ix, iy] = current_label
+        
+        if (not removed):
+            current_label += 1
+            
+        if (not labels_added):
+            viewer.add_labels(np.array(labels).astype('int8'), name="Selected ROI")
+            labels_added = True
+        else:
+            viewer.layers["Selected ROI"].data = np.array(labels).astype('int8')
+
+        
+            
+    def cell_was_clicked(self, event):
+        print('clicked')
+        current_column = table.currentColumn()
+        
+        if(current_column == 2):
+            current_row = table.currentRow()
+            cell_value = table.item(current_row, current_column).text()
+            
+            highlight_value(cell_value)
+       
+            
+    table.cellClicked.connect(cell_was_clicked)
+
+    
     # add DataFrame to Viewer
     viewer.window.add_dock_widget(win)
+    
+    
+    #layer = viewer.layers[str(Segmentation)]
+    print(viewer.layers)
+    
+    @Segmentation.mouse_double_click_callbacks
+    def clicked_roi(layer, event):
+        print('napari click')
+        print(event)
+        
+    
+    
+    """
+    @QtCore.pyqtSlot(QtWidgets.QTableWidgetItem)
+    def onClicked(table, it):
+        state = not it.data(SelectedRole)
+        it.setData(SelectedRole, state)
+        it.setBackground(
+            QtGui.QColor(100, 100, 100) if state else QtGui.QColor(0, 0, 0)
+        )
+    """
     
     
