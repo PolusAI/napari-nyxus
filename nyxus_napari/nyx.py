@@ -102,9 +102,9 @@ def widget_factory(
         #save and load image data until in memory api is complete
         from PIL import Image
         
-        if (not Segmentation.data):
-            show_info("Invalid segmentation input")
-            return
+        #if (not Segmentation.data):
+        #    show_info("Invalid segmentation input")
+        #    return
             
         im = Image.fromarray(Segmentation.data)
         im.save('segmentation.tif')
@@ -191,7 +191,7 @@ def widget_factory(
                 if (labels[ix, iy] != 0):
                     labels[ix, iy] = 0
                 else:
-                    labels[ix, iy] = current_label
+                    labels[ix, iy] = int(value)
         
         if (not removed):
             current_label += 1
@@ -202,10 +202,8 @@ def widget_factory(
         else:
             viewer.layers["Selected ROI"].data = np.array(labels).astype('int8')
 
-        
             
     def cell_was_clicked(self, event):
-        print('clicked')
         current_column = table.currentColumn()
         
         if(current_column == 2):
@@ -214,32 +212,17 @@ def widget_factory(
             
             highlight_value(cell_value)
        
-            
     table.cellClicked.connect(cell_was_clicked)
 
-    
     # add DataFrame to Viewer
     viewer.window.add_dock_widget(win)
     
-    
     #layer = viewer.layers[str(Segmentation)]
-    print(viewer.layers)
+    #print(viewer.layers)
     
-    @Segmentation.mouse_double_click_callbacks
+    @Segmentation.mouse_drag_callbacks.append
     def clicked_roi(layer, event):
-        print('napari click')
-        print(event)
-        
-    
-    
-    """
-    @QtCore.pyqtSlot(QtWidgets.QTableWidgetItem)
-    def onClicked(table, it):
-        state = not it.data(SelectedRole)
-        it.setData(SelectedRole, state)
-        it.setBackground(
-            QtGui.QColor(100, 100, 100) if state else QtGui.QColor(0, 0, 0)
-        )
-    """
-    
+        coords = np.round(event.position).astype(int)
+        value = layer.data[coords[0]][coords[1]]
+        table.selectRow(value)
     
