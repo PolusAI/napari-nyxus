@@ -98,8 +98,7 @@ def widget_factory(
                                 #n_loader_threads=Number_of_loader_threads,
                                 using_gpu = -1)
     
-    #result = nyxus_object.featurize_memory(Intensity.data, Segmentation.data)
-  
+    """
     if (not os.path.isfile(segmentation_path) and not os.path.isdir(segmentation_path)):
         
         #save and load image data until in memory api is complete
@@ -125,9 +124,13 @@ def widget_factory(
         im = Image.fromarray(Segmentation.data)
         im.save('intensity.tif')
         segmentation_path = 'intensity.tif'
+    """
     
     global result
     result = None
+    
+    result = nyxus_object.featurize(Intensity.data, Segmentation.data)
+    """
     if (os.path.isdir(intensity_path)):
         if (not os.path.isdir(segmentation_path)):
             #throw error since both must be directories
@@ -149,7 +152,7 @@ def widget_factory(
     
     else:
        show_info("Invalid input type. Please load an image or directory of images.")
-
+    """
 
     if (Save_to_csv):
         show_info("Saving results to " + Output_path + "out.csv")
