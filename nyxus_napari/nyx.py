@@ -29,6 +29,9 @@ current_label = 1
 labels = None
 labels_added = False
 
+colormap = None
+colormap_added = False
+
 class FeaturesWidget(QWidget):
     
     @QtCore.Slot(QtWidgets.QTableWidgetItem)
@@ -123,7 +126,7 @@ def widget_factory(
         im.save('intensity.tif')
         segmentation_path = 'intensity.tif'
     
-
+    global result
     result = None
     if (os.path.isdir(intensity_path)):
         if (not os.path.isdir(segmentation_path)):
@@ -211,8 +214,46 @@ def widget_factory(
             cell_value = table.item(current_row, current_column).text()
             
             highlight_value(cell_value)
+    
+    def onHeaderClicked(logicalIndex):
+        print("Header was clicked on index")
+        print(logicalIndex)
+        
+        create_feature_color_map(logicalIndex)
+        
+        
+    global colormap
+    
+    colormap = np.zeros_like(seg)
+    def create_feature_color_map(logicalIndex):
+        
+        global result 
+        global colormap_added
+        
+        labels = result.iloc[:,2]
+        values = result.iloc[:,logicalIndex]
+        label_values = pd.Series(values, index=labels).to_dict()
+        
+        print(label_values)
+        
+        
+        for ix, iy in np.ndindex(seg.shape):
+            
+            if (seg[ix, iy] != 0):
+                if(np.isnan(label_values[int(seg[ix, iy])])):
+                    continue
+                
+                colormap[ix, iy] = label_values[int(seg[ix, iy])]
+        
+        if (not colormap_added):
+            viewer.add_image(np.array(colormap), name="Colormap")
+            colormap_added = True
+        else:
+            viewer.layers["Colormap"].data = np.array(labels)
+        
        
     table.cellClicked.connect(cell_was_clicked)
+    table.horizontalHeader().sectionClicked.connect(onHeaderClicked)
 
     # add DataFrame to Viewer
     viewer.window.add_dock_widget(win)
@@ -224,5 +265,15 @@ def widget_factory(
     def clicked_roi(layer, event):
         coords = np.round(event.position).astype(int)
         value = layer.data[coords[0]][coords[1]]
+        if (value == 0):
+            return
+        table.selectRow(value)
+        
+    @Intensity.mouse_drag_callbacks.append
+    def clicked_roi(layer, event):
+        coords = np.round(event.position).astype(int)
+        value = Segmentation.data[coords[0]][coords[1]]
+        if (value == 0):
+            return
         table.selectRow(value)
     
