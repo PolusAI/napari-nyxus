@@ -1,5 +1,6 @@
 from typing import Union
 from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem
+from qtpy.QtCore import Qt
 from qtpy import QtCore, QtGui, QtWidgets, uic
 import napari
 from napari.layers import Image
@@ -8,6 +9,13 @@ from magicgui import magic_factory
 from enum import Enum
 import numpy as np
 import pandas as pd
+
+from napari.qt.threading import thread_worker
+
+from superqt import QLabeledDoubleRangeSlider
+
+import dask
+import psutil
 
 import nyxus
 
@@ -65,6 +73,9 @@ class NyxusNapari:
         self.labels = np.zeros_like(self.seg)
         self.colormap = np.zeros_like(self.seg)
         self.colormap_added = False
+        self.slider_added = False
+        
+        self.batched = False
         
         self.labels_added = False
         
@@ -108,14 +119,54 @@ class NyxusNapari:
             self.table.selectRow(value)
     
     
-    def calculate(self):  
-        self.result = self.nyxus_object.featurize(self.intensity.data, self.segmentation.data)
+    def run(self):  
+        show_info("Calculating features...")
+ 
+        self._run_calculate()
+        
+        self.add_features_table()
+
+        
+    def _run_calculate(self):
+        #worker = self._calculate()
+        #worker.start()
+        #worker.run()
+        self._calculate()
+    
+    #@thread_worker
+    def _calculate(self):
+        
+        if (type(self.intensity.data) == dask.array.core.Array):
+            self.batched = True
+            self._calculate_out_of_core()
+        else:
+            self.result = self.nyxus_object.featurize(self.intensity.data, self.segmentation.data)
+            
+    
+    def _calculate_out_of_core(self):
+        
+        results = []
+    
+        for idx in np.ndindex(self.intensity.data.numblocks):
+            results.append(self.nyxus_object.featurize(
+                                self.intensity.data.blocks[idx].compute(), 
+                                self.segmentation.data.blocks[idx].compute()))
+            
+        self.result = pd.concat(results)
+    
+
+    def save_csv(self):
         if (self.save_to_csv):
             show_info("Saving results to " + self.output_path + "out.csv")
             self.result.to_csv(self.output_path + 'out.csv', sep='\t', encoding='utf-8')
-   
-
+    
     def add_features_table(self):
+        #show_info("Creating features table")
+        self.save_csv()
+        self._add_features_table()
+
+    
+    def _add_features_table(self):    
         # Create window for the DataFrame viewer
         self.win = FeaturesWidget()
         scroll = QScrollArea()
@@ -141,6 +192,10 @@ class NyxusNapari:
         self.viewer.window.add_dock_widget(self.win)
     
     def highlight_value(self, value):
+        
+        if (self.batched):
+            show_info('Feature not enabled for batched processing')
+            return
 
         removed = False
 
@@ -164,6 +219,11 @@ class NyxusNapari:
 
             
     def cell_was_clicked(self, event):
+        
+        if (self.batched):
+            show_info('Feature not enabled for batched processing')
+            return
+        
         current_column = self.table.currentColumn()
         
         if(current_column == 2):
@@ -173,26 +233,106 @@ class NyxusNapari:
             self.highlight_value(cell_value)
     
     def onHeaderClicked(self, logicalIndex):
+        
+        if (self.batched):
+            show_info('Feature not enabled for batched processing')
+            return
+        
         self.create_feature_color_map(logicalIndex)
         
     def create_feature_color_map(self, logicalIndex):
+        
+        if (self.batched):
+            show_info('Feature not enabled for batched processing')
+            return
+        
         self.colormap = np.zeros_like(self.seg)
         
         labels = self.result.iloc[:,2]
         values = self.result.iloc[:,logicalIndex]
-        label_values = pd.Series(values, index=labels).to_dict()
+        self.label_values = pd.Series(values, index=labels).to_dict()
+        
+        min_value = float('inf')
+        max_value = float('-inf')
         
         for ix, iy in np.ndindex(self.seg.shape):
             
             if (self.seg[ix, iy] != 0):
-                if(np.isnan(label_values[int(self.seg[ix, iy])])):
+                if(np.isnan(self.label_values[int(self.seg[ix, iy])])):
                     continue
                 
-                self.colormap[ix, iy] = label_values[int(self.seg[ix, iy])]
+                value = self.label_values[int(self.seg[ix, iy])]
+                
+                min_value = min(min_value, value)
+                max_value = max(max_value, value)
+                
+                self.colormap[ix, iy] = value
+                
+            else:
+                self.colormap[ix, iy] = 0
         
         if (not self.colormap_added):
             self.viewer.add_image(np.array(self.colormap), name="Colormap")
             self.colormap_added = True
+            
         else:
             self.viewer.layers["Colormap"].data = np.array(self.colormap)
+        
+        if (self.slider_added):
+            self._update_slider([min_value, max_value])
+            
+        else:
+            self._add_range_slider(min_value, max_value)
+        
     
+    
+    def _get_label_from_range(self, min_bound, max_bound):
+
+        for ix, iy in np.ndindex(self.colormap.shape):
+            
+            if (self.seg[ix, iy] != 0):
+                
+                if(np.isnan(self.label_values[int(self.seg[ix, iy])])):
+                    continue
+                
+                value = self.label_values[int(self.seg[ix, iy])]
+                
+                if (value <= max_bound and value >= min_bound):
+                    self.labels[ix, iy] = self.seg[ix, iy]
+                    self.colormap[ix, iy] = value
+                else:
+                    self.labels[ix, iy] = 0
+                    self.colormap[ix, iy] = 0
+                
+        if (not self.colormap_added):
+            self.viewer.add_image(np.array(self.colormap), name="Colormap")
+            self.colormap_added = True
+            
+        else:
+            self.viewer.layers["Colormap"].data = np.array(self.colormap)
+            
+             
+        if (not self.labels_added):
+            self.viewer.add_labels(np.array(self.labels).astype('int8'), name="Selected ROI")
+            self.labels_added = True
+            
+        else:
+            self.viewer.layers["Selected ROI"].data = np.array(self.labels).astype('int8')
+            
+    
+    def _add_range_slider(self, min_value, max_value):
+        
+        if (self.slider_added):
+            self.slider.setRange(min_value, max_value)
+            
+        else:         
+            self.slider = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
+            self.slider.setRange(min_value, max_value)
+            self.slider.setValue([min_value, max_value])
+            self.slider.valueChanged.connect(self._update_slider)
+            
+            self.viewer.window.add_dock_widget(self.slider)
+        
+    def _update_slider(self, event):
+
+        self._get_label_from_range(event[0], event[1])

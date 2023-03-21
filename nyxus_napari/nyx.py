@@ -66,9 +66,7 @@ def widget_factory(
         Use_CUDA_Enabled_GPU,
         GPU_id)
     
-    nyx.calculate()
-
-    nyx.add_features_table()
+    nyx.run()
     
     
     
