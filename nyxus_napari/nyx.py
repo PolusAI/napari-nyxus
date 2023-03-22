@@ -23,16 +23,6 @@ class Features(Enum):
     All_but_Gabor = "*ALL_BUT_GABOR*"
     All_but_GLCM= "*ALL_BUT_GLCM*"
 
-Widget = Union["magicgui.widgets.Widget", "qtpy.QtWidgets.QWidget"]
-
-
-current_label = 1
-labels = None
-labels_added = False
-
-colormap = None
-colormap_added = False
-
 
 @magic_factory
 def widget_factory(
