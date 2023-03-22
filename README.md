@@ -20,7 +20,6 @@ cd nyxus_napari
 pip install -e .
 ```
 
-
 # Use
 After installing the plugin, start Napari by running the command `napari` from the command line. Once the Napari 
 GUI is loaded, the Nyxus plugin can be loaded from the `Plugins` menu in the toolbar by going to Plugins -> nyxus-napari.
@@ -69,3 +68,10 @@ that contains the ROIs who's features values fall within the slider values.
 The new labels resulting from the range slider selector can then be used to run Nyxus on by using the labels image as the `Segmentation` parameter.
 
 ![](docs/source/img/run_on_colormap_labels.png)
+
+# Limitations
+
+While Nyxus Napari provides batched processing for large sets of images where each individual image will fit into RAM, 
+it does not provide functionality to handle large single images that do not fit into RAM or that are larger than the 
+limitations of Napari. For large images, it is recommended to install the Python or CLI version of Nyxus. 
+For more information, see https://github.com/PolusAI/nyxus. 
