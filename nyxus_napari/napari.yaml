@@ -4,12 +4,6 @@ contributions:
   - id: nyxus-napari.nyxus_widget
     title: Make nyxus widget with magic_factory
     python_name: nyxus_napari.nyx:widget_factory
-  - id: nyxus-napari.do_nyxus
-    title: Perform nyxus on image, return new image
-    python_name: nyxus_napari.nyx:nyxus
   widgets:
   - command: nyxus-napari.nyxus_widget
     display_name: Nyxus
-  - command: nyxus-napari.do_nyxus
-    display_name: Nyxus
-    autogenerate: true
