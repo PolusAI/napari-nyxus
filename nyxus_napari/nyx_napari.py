@@ -1,21 +1,18 @@
-from typing import Union
-from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem
+from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem, QLineEdit, QLabel, QHBoxLayout
 from qtpy.QtCore import Qt
-from qtpy import QtCore, QtGui, QtWidgets, uic
+from qtpy import QtCore, QtGui, QtWidgets
+from superqt import QLabeledDoubleRangeSlider
 import napari
 from napari.layers import Image
+from napari.qt.threading import thread_worker
 from napari.utils.notifications import show_info
 from magicgui import magic_factory
 from enum import Enum
 import numpy as np
 import pandas as pd
-
-from napari.qt.threading import thread_worker
-
-from superqt import QLabeledDoubleRangeSlider
-
 import dask
-import psutil
+
+from nyxus_napari import util
 
 import nyxus
 
@@ -36,7 +33,6 @@ class FeaturesWidget(QWidget):
     
     @QtCore.Slot(QtWidgets.QTableWidgetItem)
     def onClicked(self, it):
-        print('clicked')
         state = not it.data(SelectedRole)
         it.setData(SelectedRole, state)
         it.setBackground(
@@ -121,10 +117,9 @@ class NyxusNapari:
     
     def run(self):  
         show_info("Calculating features...")
- 
         self._run_calculate()
-        
         self.add_features_table()
+
 
         
     def _run_calculate(self):
@@ -135,7 +130,7 @@ class NyxusNapari:
     
     #@thread_worker
     def _calculate(self):
-        
+
         if (type(self.intensity.data) == dask.array.core.Array):
             self.batched = True
             self._calculate_out_of_core()
@@ -254,6 +249,8 @@ class NyxusNapari:
         
         min_value = float('inf')
         max_value = float('-inf')
+
+        self.slider_feature_name = self.result.columns[logicalIndex]
         
         for ix, iy in np.ndindex(self.seg.shape):
             
@@ -321,18 +318,53 @@ class NyxusNapari:
             
     
     def _add_range_slider(self, min_value, max_value):
+        min_value = util.round_down_to_5_sig_figs(min_value)
+        max_value = util.round_up_to_5_sig_figs(max_value)
         
         if (self.slider_added):
             self.slider.setRange(min_value, max_value)
             
-        else:         
+        else:  
+
             self.slider = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
             self.slider.setRange(min_value, max_value)
             self.slider.setValue([min_value, max_value])
             self.slider.valueChanged.connect(self._update_slider)
+
+            layout = QVBoxLayout()
+            self.name_label = QLabel(self.slider_feature_name)
+            self.name_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(self.name_label)
             
-            self.viewer.window.add_dock_widget(self.slider)
+            layout.addWidget(self.slider)
+            
+            widget = QWidget()
+            widget.setLayout(layout)
+            self.dock_widget = self.viewer.window.add_dock_widget(widget)
+            
+            self.min_box = QLineEdit(str(min_value))
+            self.min_box.setReadOnly(True)
+            self.max_box = QLineEdit(str(max_value))
+            self.max_box.setReadOnly(True)
+
+            
+            hlayout = QHBoxLayout()
+            hlayout.addWidget(self.min_box)
+            hlayout.addWidget(self.max_box)
+            layout.addLayout(hlayout)
+            
+            # Add a label to the dock widget to display text at the top
+            self.label = QLabel("Adjust Range")
+            self.label.setAlignment(Qt.AlignCenter)
+            self.dock_widget.setTitleBarWidget(self.label)
+
+            self.slider_added = True
+
         
     def _update_slider(self, event):
-
-        self._get_label_from_range(event[0], event[1])
+        self.name_label = QLabel(self.slider_feature_name)
+        min_value = util.round_down_to_5_sig_figs(event[0])
+        max_value = util.round_up_to_5_sig_figs(event[1])
+        self.min_box = QLineEdit(str(min_value))
+        self.max_box = QLineEdit(str(max_value))
+        self._get_label_from_range(min_value, max_value)
