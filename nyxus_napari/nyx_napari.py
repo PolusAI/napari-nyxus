@@ -104,7 +104,7 @@ class NyxusNapari:
             value = layer.data[coords[0]][coords[1]]
             if (value == 0):
                 return
-            self.table.selectRow(value)
+            self.table.selectRow(value-1)
             
         @intensity.mouse_drag_callbacks.append
         def clicked_roi(layer, event):
@@ -112,7 +112,7 @@ class NyxusNapari:
             value = segmentation.data[coords[0]][coords[1]]
             if (value == 0):
                 return
-            self.table.selectRow(value)
+            self.table.selectRow(value-1)
     
     
     def run(self):  
