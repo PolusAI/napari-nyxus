@@ -9,7 +9,8 @@ logo = "docs/source/img/polus.png"
 
 @magic_factory(
     label_head=dict(
-        widget_type="Label", label=f'<h1><img src="{logo}" height="50" width="50"> Nyxus</h1>'
+        #widget_type="Label", label=f'<h1><img src="{logo}" height="50" width="50"> Nyxus</h1>'
+        widget_type="Label", label=f'<h1>Nyxus</h1>'
     ),
     documentation=dict(
         widget_type="Label", label=f"For information on the provided features see the <a href='https://nyxus.readthedocs.io/en/latest/featurelist.html'>documentation</a>"

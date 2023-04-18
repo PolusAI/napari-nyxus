@@ -28,7 +28,7 @@ class Features(Enum):
     NGTDM = "*ALL_NGTDM*"
     All_but_Gabor = "*ALL_BUT_GABOR*"
     All_but_GLCM= "*ALL_BUT_GLCM*"
-    
+
 class FeaturesWidget(QWidget):
     
     @QtCore.Slot(QtWidgets.QTableWidgetItem)
@@ -40,6 +40,13 @@ class FeaturesWidget(QWidget):
         )
 
 class NyxusNapari:
+    """ Class to create Napair plugin to run Nyxus
+
+    This class takes in arguments from the Napari viewer and uses the args
+    to construct click events, run nyxus, and add other elements to the viewer
+    based on nyxus results
+    
+    """
     
     def __init__(
         self,
@@ -54,7 +61,8 @@ class NyxusNapari:
         coarse_gray_depth: int = 256, 
         use_CUDA_Enabled_GPU: bool = False,
         gpu_id: int = 0):
-    
+
+        # Set class data
         self.viewer = viewer
         self.intensity = intensity
         self.segmentation = segmentation
@@ -75,6 +83,7 @@ class NyxusNapari:
         
         self.labels_added = False
         
+        # Check for CUDA enable GPU if requested
         if (use_CUDA_Enabled_GPU):
             import subprocess
             
@@ -84,7 +93,8 @@ class NyxusNapari:
             except Exception: # this command not being found can raise quite a few different errors depending on the configuration
                 show_info('No Nvidia GPU found. The machine must have a CUDA enable Nvidia GPU with drivers installed.')
                 return
-                
+            
+            # Create GPU enabled nyxus object
             self.nyxus_object = nyxus.Nyxus([features.value], 
                                 neighbor_distance=neighbor_distance, 
                                 pixels_per_micron=pixels_per_micron, 
@@ -92,14 +102,19 @@ class NyxusNapari:
                                 using_gpu = gpu_id)
             
         else:
+            # No GPU nyxus objet
             self.nyxus_object = nyxus.Nyxus([features.value], 
                                     neighbor_distance=neighbor_distance, 
                                     pixels_per_micron=pixels_per_micron, 
                                     coarse_gray_depth=coarse_gray_depth,
                                     using_gpu = -1)
         
+        # Add event handler for ROI clicking feature
         @segmentation.mouse_drag_callbacks.append
         def clicked_roi(layer, event):
+            """ Adds click event to segmentation image so when ROIs are clicked in the viewer,
+            the correct ROI is highlighted in the results table
+            """
             coords = np.round(event.position).astype(int)
             value = layer.data[coords[0]][coords[1]]
             if (value == 0):
@@ -108,6 +123,9 @@ class NyxusNapari:
             
         @intensity.mouse_drag_callbacks.append
         def clicked_roi(layer, event):
+            """ Adds click event to intensity image so when ROIs are clicked in the viewer,
+            the correct ROI is highlighted in the results table
+            """
             coords = np.round(event.position).astype(int)
             value = segmentation.data[coords[0]][coords[1]]
             if (value == 0):
@@ -115,14 +133,21 @@ class NyxusNapari:
             self.table.selectRow(value-1)
     
     
+  
     def run(self):  
+        """ Run Nyxus on data from napari viewer
+        """
         show_info("Calculating features...")
         self._run_calculate()
         self.add_features_table()
 
 
-        
+
     def _run_calculate(self):
+        """ Call correct calculates features. Should not be called directly.
+        Used calling _calculate from woker threads instead of directly.
+        This method is called from run()
+        """
         #worker = self._calculate()
         #worker.start()
         #worker.run()
@@ -130,7 +155,8 @@ class NyxusNapari:
     
     #@thread_worker
     def _calculate(self):
-
+        """ Calculates the features using Nyxus
+        """
         if (type(self.intensity.data) == dask.array.core.Array):
             self.batched = True
             self._calculate_out_of_core()
@@ -139,7 +165,9 @@ class NyxusNapari:
             
     
     def _calculate_out_of_core(self):
-        
+        """ Out of core calculations for when dataset size is larger than what Napari
+        loads into memory
+        """
         results = []
     
         for idx in np.ndindex(self.intensity.data.numblocks):
@@ -151,17 +179,24 @@ class NyxusNapari:
     
 
     def save_csv(self):
+        """ Saves feature calculations to a csv
+        """
         if (self.save_to_csv):
             show_info("Saving results to " + self.output_path + "out.csv")
             self.result.to_csv(self.output_path + 'out.csv', sep='\t', encoding='utf-8')
     
     def add_features_table(self):
+        """ Appends table consisting of results dataframe from the feature calculations to the
+        Napari viewer
+        """
         #show_info("Creating features table")
         self.save_csv()
         self._add_features_table()
 
     
-    def _add_features_table(self):    
+    def _add_features_table(self):   
+        """ Adds table to Napari viewer
+        """ 
         # Create window for the DataFrame viewer
         self.win = FeaturesWidget()
         scroll = QScrollArea()
@@ -187,6 +222,8 @@ class NyxusNapari:
         self.viewer.window.add_dock_widget(self.win)
     
     def highlight_value(self, value):
+        """ 
+        """
         
         if (self.batched):
             show_info('Feature not enabled for batched processing')
