@@ -361,6 +361,7 @@ class NyxusNapari:
         if (self.slider_added):
             print("in slider added code")
             self.slider.setRange(min_value, max_value)
+            self.range = [min_value, max_value]
             self.slider.setValue([min_value, max_value])
             self.name_label.setText(self.slider_feature_name)
             self.min_box.setText(str(min_value))
@@ -369,6 +370,7 @@ class NyxusNapari:
         else:  
 
             self.slider = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
+            self.range = [min_value, max_value]
             self.slider.setRange(min_value, max_value)
             self.slider.setValue([min_value, max_value])
             self.slider.valueChanged.connect(self._update_slider)
@@ -386,9 +388,12 @@ class NyxusNapari:
             self.dock_widget = self.viewer.window.add_dock_widget(widget)
             
             self.min_box = QLineEdit(str(min_value))
-            self.min_box.setReadOnly(True)
+            self.min_box.setReadOnly(False)
+            self.min_box.textChanged.connect(self._get_minimum_text)
+
             self.max_box = QLineEdit(str(max_value))
-            self.max_box.setReadOnly(True)
+            self.max_box.setReadOnly(False)
+            self.max_box.textChanged.connect(self._get_maximum_text)
 
             
             self.hlayout = QHBoxLayout()
@@ -410,3 +415,24 @@ class NyxusNapari:
         self.min_box.setText(str(min_value))
         self.max_box.setText(str(max_value))
         self._get_label_from_range(min_value, max_value)
+
+    def _get_minimum_text(self):
+        user_input = self.min_box.text()
+
+        try :
+            value = float(user_input)
+            if (value >= self.range[0] and value <= self.range[1]):
+                self.slider.setValue([value, float(self.max_box.text())])
+        except:
+            return
+        
+    def _get_maximum_text(self):
+        user_input = self.max_box.text()
+
+        try: 
+            value = float(user_input)
+            if (value >= self.range[0] and value <= self.range[1]):
+                self.slider.setValue([float(self.min_box.text()), value])
+        
+        except:
+            return
