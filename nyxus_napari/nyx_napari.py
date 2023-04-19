@@ -312,11 +312,11 @@ class NyxusNapari:
         else:
             self.viewer.layers["Colormap"].data = np.array(self.colormap)
         
-        if (self.slider_added):
-            self._update_slider([min_value, max_value])
+        #if (self.slider_added):
+        #    self._update_slider([min_value, max_value])
             
-        else:
-            self._add_range_slider(min_value, max_value)
+        #else:
+        self._add_range_slider(min_value, max_value)
         
     
     
@@ -359,7 +359,12 @@ class NyxusNapari:
         max_value = util.round_up_to_5_sig_figs(max_value)
         
         if (self.slider_added):
+            print("in slider added code")
             self.slider.setRange(min_value, max_value)
+            self.slider.setValue([min_value, max_value])
+            self.name_label.setText(self.slider_feature_name)
+            self.min_box.setText(str(min_value))
+            self.max_box.setText(str(max_value))
             
         else:  
 
@@ -369,8 +374,9 @@ class NyxusNapari:
             self.slider.valueChanged.connect(self._update_slider)
 
             layout = QVBoxLayout()
-            self.name_label = QLabel(self.slider_feature_name)
+            self.name_label = QLineEdit(self.slider_feature_name)
             self.name_label.setAlignment(Qt.AlignCenter)
+            self.name_label.setReadOnly(True)
             layout.addWidget(self.name_label)
             
             layout.addWidget(self.slider)
@@ -385,10 +391,10 @@ class NyxusNapari:
             self.max_box.setReadOnly(True)
 
             
-            hlayout = QHBoxLayout()
-            hlayout.addWidget(self.min_box)
-            hlayout.addWidget(self.max_box)
-            layout.addLayout(hlayout)
+            self.hlayout = QHBoxLayout()
+            self.hlayout.addWidget(self.min_box)
+            self.hlayout.addWidget(self.max_box)
+            layout.addLayout(self.hlayout)
             
             # Add a label to the dock widget to display text at the top
             self.label = QLabel("Adjust Range")
@@ -399,9 +405,8 @@ class NyxusNapari:
 
         
     def _update_slider(self, event):
-        self.name_label = QLabel(self.slider_feature_name)
         min_value = util.round_down_to_5_sig_figs(event[0])
         max_value = util.round_up_to_5_sig_figs(event[1])
-        self.min_box = QLineEdit(str(min_value))
-        self.max_box = QLineEdit(str(max_value))
+        self.min_box.setText(str(min_value))
+        self.max_box.setText(str(max_value))
         self._get_label_from_range(min_value, max_value)
