@@ -1,0 +1,9 @@
+name: napari-nyxus
+contributions:
+  commands:
+  - id: napari-nyxus.nyxus_widget
+    title: Make nyxus widget with magic_factory
+    python_name: napari_nyxus.nyx:widget_factory
+  widgets:
+  - command: napari-nyxus.nyxus_widget
+    display_name: Nyxus

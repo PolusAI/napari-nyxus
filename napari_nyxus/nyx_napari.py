@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import dask
 
-from nyxus_napari import util
+from napari_nyxus import util
 
 import nyxus
 

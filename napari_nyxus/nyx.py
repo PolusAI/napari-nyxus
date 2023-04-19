@@ -2,7 +2,7 @@ import napari
 from napari.layers import Image
 from magicgui import magic_factory
 
-from nyxus_napari.nyx_napari import Features
+from napari_nyxus.nyx_napari import Features
 
 
 logo = "docs/source/img/polus.png"
@@ -33,7 +33,7 @@ def widget_factory(
     ):
     
     #wait for function call to load large modules
-    from nyxus_napari import nyx_napari
+    from napari_nyxus import nyx_napari
     import pandas as pd
     import numpy as np
     import os
