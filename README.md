@@ -5,20 +5,53 @@ Nyxus application to compute features. Nyxus is a feature-rich, highly optimized
 of analyzing images of arbitrary size and assembling complex regions of interest (ROIs) split across multiple image tiles and files. 
 
 For more information on Nyxus, see https://github.com/PolusAI/nyxus.
-
+ 
 # Installation 
 
-To install this Napari plugin, it is recommended to first create a separate Conda environment. After creating the Conda environment,
-install Napari using `pip install napari`. 
+To install Napari, it is recommended to first create a separate Conda environment. 
 
-After installing Napari, the Nyxus Napair plugin can be installed by cloning this repo and then building the plugin from the source. 
+```
+conda create -y -n napari-env -c conda-forge python=3.9
+conda activate napari-env
+```
+
+After creating the Conda environment,
+install Napari using pip
+
+```
+python -m pip install "napari[all]"
+python -m pip install "napari[all]" --upgrade
+```
+
+or using conda
+
+```
+conda install -c conda-forge napari
+conda update napari
+```
+
+Next, Nyxus must be installed. Note that the version of Nyxus must be greater than `0.50` to run the Napari plugin.
+To install Nyxus, either run
+
+`pip install nyxus`
+
+or build from source using the instructions at https://github.com/PolusAI/nyxus#building-from-source using the conda build for the
+python API.
+
+After installing Napari and Nyxus, the Nyxus Napari plugin can be installed by cloning this repo and then building the plugin from the source. 
 An example of this process is provided below.
 
 ```
-git clone https://github.com/JesseMckinzie/nyxus-napari.git
-cd nyxus_napari
+git clone https://github.com/PolusAI/napari-nyxus.git
+cd napari_nyxus
 pip install -e .
 ```
+
+Napari can then be ran by running 
+
+```
+napari
+````
 
 # Use
 After installing the plugin, start Napari by running the command `napari` from the command line. Once the Napari 
