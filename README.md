@@ -30,8 +30,7 @@ conda install -c conda-forge napari
 conda update napari
 ```
 
-Next, Nyxus must be installed. Note that the version of Nyxus must be greater than `0.50` to run the Napari plugin.
-To install Nyxus, either run
+Next, Nyxus must be installed. Note that the version of Nyxus must be greater than or equal to `0.50` to run the Napari plugin.
 
 `pip install nyxus`
 
