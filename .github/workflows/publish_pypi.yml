@@ -17,13 +17,13 @@ jobs:
           python-version: "3.x"
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -U build twine nyxus
+          python -m pip install --upgrade pip twine build
+      - name: Build wheels
+        run: python -m build
       - name: Publish to PyPi
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_PASSWORD }}
           TWINE_REPOSITORY: testpypi
         run: 
-          python -m build
-          twine upload dist/*.whl
+          python -m twine upload dist/*.whl
