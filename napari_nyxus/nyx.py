@@ -1,5 +1,5 @@
 import napari
-from napari.layers import Image
+from napari.layers import Image, Labels
 from magicgui import magic_factory
 
 from napari_nyxus.nyx_napari import Features
@@ -20,11 +20,10 @@ def widget_factory(
     label_head,
     viewer: napari.Viewer,
     Intensity: Image, 
-    Segmentation: Image,
+    Segmentation: Labels,
     Features: Features,
-    Save_to_csv: bool = True,
     Output_path: "str" = "",
-    Neighbor_distance: float = 5.0,
+    Neighbor_distance: int = 5,
     Pixels_per_micron: float = 1.0,
     Coarse_gray_depth: int = 256, 
     Use_CUDA_Enabled_GPU: bool = False,
@@ -43,7 +42,6 @@ def widget_factory(
         Intensity, 
         Segmentation,
         Features,
-        Save_to_csv,
         Output_path,
         Neighbor_distance,
         Pixels_per_micron,
