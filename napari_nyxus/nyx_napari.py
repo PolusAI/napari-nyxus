@@ -1,9 +1,9 @@
-from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem, QLineEdit, QLabel, QHBoxLayout
-from qtpy.QtCore import Qt
+from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem, QLineEdit, QLabel, QHBoxLayout, QAbstractItemView
+from qtpy.QtCore import Qt, QTimer
 from qtpy import QtCore, QtGui, QtWidgets
 from superqt import QLabeledDoubleRangeSlider
 import napari
-from napari.layers import Image
+from napari.layers import Image, Labels
 from napari.qt.threading import thread_worker
 from napari.utils.notifications import show_info
 from magicgui import magic_factory
@@ -13,6 +13,10 @@ import pandas as pd
 import dask
 
 from napari_nyxus import util
+
+#from napari_nyxus.table import TableWidget, add_table, get_table
+from napari_skimage_regionprops import TableWidget, add_table, get_table
+from napari_workflows._workflow import _get_layer_from_data
 
 import nyxus
 
@@ -52,11 +56,10 @@ class NyxusNapari:
         self,
         viewer: napari.Viewer,
         intensity: Image, 
-        segmentation: Image,
+        segmentation: Labels,
         features: Features,
-        save_to_csv: bool = True,
         output_path: "str" = "",
-        neighbor_distance: float = 5.0,
+        neighbor_distance: int = 5,
         pixels_per_micron: float = 1.0,
         coarse_gray_depth: int = 256, 
         use_CUDA_Enabled_GPU: bool = False,
@@ -66,7 +69,6 @@ class NyxusNapari:
         self.viewer = viewer
         self.intensity = intensity
         self.segmentation = segmentation
-        self.save_to_csv = save_to_csv
         self.output_path = output_path
     
         self.nyxus_object = None
@@ -110,29 +112,47 @@ class NyxusNapari:
                                     using_gpu = -1)
         
         # Add event handler for ROI clicking feature
+        
         @segmentation.mouse_drag_callbacks.append
-        def clicked_roi(layer, event):
+        def _after_labels_clicked(layer, event):
             """ Adds click event to segmentation image so when ROIs are clicked in the viewer,
             the correct ROI is highlighted in the results table
             """
             coords = np.round(event.position).astype(int)
-            value = layer.data[coords[0]][coords[1]]
+            
+            try:
+                value = layer.data[coords[0]][coords[1]]
+            except:
+                return
+            
             if (value == 0):
                 return
+
             self.table.selectRow(value-1)
             
+            self.after_click(value)
+            
         @intensity.mouse_drag_callbacks.append
-        def clicked_roi(layer, event):
+        def clicked_roi(layer, event, event1):
             """ Adds click event to intensity image so when ROIs are clicked in the viewer,
             the correct ROI is highlighted in the results table
             """
             coords = np.round(event.position).astype(int)
-            value = segmentation.data[coords[0]][coords[1]]
+            
+            try:
+                value = segmentation.data[coords[0]][coords[1]]
+            except:
+                return
+            
             if (value == 0):
                 return
+
             self.table.selectRow(value-1)
+
     
-    
+    def after_click(self, value):
+        self.table.selectRow(value-1)
+
   
     def run(self):  
         """ Run Nyxus on data from napari viewer
@@ -177,49 +197,59 @@ class NyxusNapari:
             
         self.result = pd.concat(results)
     
-
-    def save_csv(self):
-        """ Saves feature calculations to a csv
-        """
-        if (self.save_to_csv):
-            show_info("Saving results to " + self.output_path + "out.csv")
-            self.result.to_csv(self.output_path + 'out.csv', sep='\t', encoding='utf-8')
     
     def add_features_table(self):
         """ Appends table consisting of results dataframe from the feature calculations to the
         Napari viewer
         """
-        #show_info("Creating features table")
-        self.save_csv()
+        show_info("Creating features table")
+
         self._add_features_table()
 
     
     def _add_features_table(self):   
         """ Adds table to Napari viewer
         """ 
-        # Create window for the DataFrame viewer
-        self.win = FeaturesWidget()
-        scroll = QScrollArea()
-        layout = QVBoxLayout()
-        self.table = QTableWidget()
-        scroll.setWidget(self.table)
-        layout.addWidget(self.table)
-        self.win.setLayout(layout)    
-        self.win.setWindowTitle("Feature Results")
 
-        # Add DataFrame to widget window
-        self.table.setColumnCount(len(self.result.columns))
-        self.table.setRowCount(len(self.result.index))
-        self.table.setHorizontalHeaderLabels(self.result.columns)
-        for i in range(len(self.result.index)):
-            for j in range(len(self.result.columns)):
-                self.table.setItem(i,j,QTableWidgetItem(str(self.result.iloc[i, j])))
-                
-        self.table.cellClicked.connect(self.cell_was_clicked)
-        self.table.horizontalHeader().sectionClicked.connect(self.onHeaderClicked)
+        labels_layer = _get_layer_from_data(self.viewer, self.seg)
+        new_table = self.result.to_dict()
+        
+        flipped_dict = {}
+        for key, value in new_table.items():
+            values_list = list(value.values())
+            flipped_dict[key] = values_list
+            
+        
+        labels_layer.properties = flipped_dict
+        
+        add_table(labels_layer, self.viewer)
+        
+        widget_table = get_table(labels_layer, self.viewer)
+        
+        self.table = widget_table._view
+        
+        self.table.cellDoubleClicked.connect(self.cell_was_clicked)
 
-        # add DataFrame to Viewer
-        self.viewer.window.add_dock_widget(self.win)
+        # remove label clicking event to use our own
+        widget_table._layer.mouse_drag_callbacks.remove(widget_table._clicked_labels)
+        
+        # add new label clicking event
+        self.table.horizontalHeader().sectionDoubleClicked.connect(self.onHeaderClicked)
+
+            
+    def cell_was_clicked(self, event):
+        
+        if (self.batched):
+            show_info('Feature not enabled for batched processing')
+            return
+        
+        current_column = self.table.currentColumn()
+        
+        if(current_column == 2):
+            current_row = self.table.currentRow()
+            cell_value = self.table.item(current_row, current_column).text()
+            
+            self.highlight_value(cell_value)
     
     def highlight_value(self, value):
         """ 
@@ -248,76 +278,35 @@ class NyxusNapari:
             self.labels_added = True
         else:
             self.viewer.layers["Selected ROI"].data = np.array(self.labels).astype('int8')
-
-            
-    def cell_was_clicked(self, event):
-        
-        if (self.batched):
-            show_info('Feature not enabled for batched processing')
-            return
-        
-        current_column = self.table.currentColumn()
-        
-        if(current_column == 2):
-            current_row = self.table.currentRow()
-            cell_value = self.table.item(current_row, current_column).text()
-            
-            self.highlight_value(cell_value)
-    
+ 
     def onHeaderClicked(self, logicalIndex):
         
         if (self.batched):
             show_info('Feature not enabled for batched processing')
             return
+
+        column = self.result.columns[logicalIndex]
         
-        self.create_feature_color_map(logicalIndex)
+        self.slider_feature_name = column
         
-    def create_feature_color_map(self, logicalIndex):
+        max = self.result[column].max()
+        min = self.result[column].min()
         
-        if (self.batched):
-            show_info('Feature not enabled for batched processing')
-            return
-        
-        self.colormap = np.zeros_like(self.seg)
+        self.slider_layer_name = column + " in " + self.segmentation.name
         
         labels = self.result.iloc[:,2]
         values = self.result.iloc[:,logicalIndex]
         self.label_values = pd.Series(values, index=labels).to_dict()
         
-        min_value = float('inf')
-        max_value = float('-inf')
-
-        self.slider_feature_name = self.result.columns[logicalIndex]
-        
-        for ix, iy in np.ndindex(self.seg.shape):
-            
-            if (self.seg[ix, iy] != 0):
-                if(np.isnan(self.label_values[int(self.seg[ix, iy])])):
-                    continue
+        self.colormap = None
+        for layer in self.viewer.layers:
+            if layer.name == self.slider_layer_name:
+                self.colormap = layer.data 
                 
-                value = self.label_values[int(self.seg[ix, iy])]
+        if (self.colormap is None):
+            raise RuntimeError(f"Colormap layer {self.slider_layer_name} not found.")
                 
-                min_value = min(min_value, value)
-                max_value = max(max_value, value)
-                
-                self.colormap[ix, iy] = value
-                
-            else:
-                self.colormap[ix, iy] = 0
-        
-        if (not self.colormap_added):
-            self.viewer.add_image(np.array(self.colormap), name="Colormap")
-            self.colormap_added = True
-            
-        else:
-            self.viewer.layers["Colormap"].data = np.array(self.colormap)
-        
-        #if (self.slider_added):
-        #    self._update_slider([min_value, max_value])
-            
-        #else:
-        self._add_range_slider(min_value, max_value)
-        
+        self._add_range_slider(min, max)
     
     
     def _get_label_from_range(self, min_bound, max_bound):
@@ -338,12 +327,8 @@ class NyxusNapari:
                     self.labels[ix, iy] = 0
                     self.colormap[ix, iy] = 0
                 
-        if (not self.colormap_added):
-            self.viewer.add_image(np.array(self.colormap), name="Colormap")
-            self.colormap_added = True
-            
-        else:
-            self.viewer.layers["Colormap"].data = np.array(self.colormap)
+       
+        self.viewer.layers[self.slider_layer_name].data = np.array(self.colormap)
             
              
         if (not self.labels_added):
@@ -355,11 +340,12 @@ class NyxusNapari:
             
     
     def _add_range_slider(self, min_value, max_value):
+
         min_value = util.round_down_to_5_sig_figs(min_value)
         max_value = util.round_up_to_5_sig_figs(max_value)
         
         if (self.slider_added):
-            print("in slider added code")
+
             self.slider.setRange(min_value, max_value)
             self.range = [min_value, max_value]
             self.slider.setValue([min_value, max_value])
@@ -410,10 +396,13 @@ class NyxusNapari:
 
         
     def _update_slider(self, event):
+        
         min_value = util.round_down_to_5_sig_figs(event[0])
         max_value = util.round_up_to_5_sig_figs(event[1])
+        
         self.min_box.setText(str(min_value))
         self.max_box.setText(str(max_value))
+        
         self._get_label_from_range(min_value, max_value)
 
     def _get_minimum_text(self):
@@ -431,8 +420,10 @@ class NyxusNapari:
 
         try: 
             value = float(user_input)
-            if (value >= self.range[0] and value <= self.range[1]):
+            if (value >= self.range[0] and value <= self.range[1]): 
                 self.slider.setValue([float(self.min_box.text()), value])
         
         except:
             return
+            
+    
