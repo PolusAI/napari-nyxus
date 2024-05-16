@@ -1,16 +1,23 @@
-from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem, QLineEdit, QLabel, QHBoxLayout, QAbstractItemView
+from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem, QLineEdit, QLabel, QHBoxLayout, QPushButton
 from qtpy.QtCore import Qt, QTimer
 from qtpy import QtCore, QtGui, QtWidgets
+from qtpy.QtGui import QColor
 from superqt import QLabeledDoubleRangeSlider
 import napari
 from napari.layers import Image, Labels
 from napari.qt.threading import thread_worker
 from napari.utils.notifications import show_info
 from magicgui import magic_factory
+
 from enum import Enum
 import numpy as np
 import pandas as pd
 import dask
+from filepattern import FilePattern
+import tempfile
+
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 
 from napari_nyxus import util
 
@@ -162,6 +169,46 @@ class NyxusNapari:
         self.add_features_table()
 
 
+    def add_features_heatmap(self):
+
+        win = FeaturesWidget()
+        scroll = QScrollArea()
+        layout = QVBoxLayout()
+        table = QTableWidget()
+        scroll.setWidget(table)
+        layout.addWidget(table)
+        win.setLayout(layout)    
+        win.setWindowTitle("Feature Results 2")
+
+        # Add DataFrame to widget window
+        table.setColumnCount(len(self.result.columns))
+        table.setRowCount(len(self.result.index))
+        table.setHorizontalHeaderLabels(self.result.columns)
+        for i in range(len(self.result.index)):
+            for j in range(len(self.result.columns)):
+                table.setItem(i,j,QTableWidgetItem(str(self.result.iloc[i, j])))
+
+        #table.item(0,0).setBackground(QColor(0, 1, 1, 127))
+        #table.item(1,1).setBackground(QColor(255, 1, 1, 127))
+        for col in range(3, self.result.shape[1]):
+            # Get the column data
+            column_data = self.result.iloc[:, col]
+            
+            # Normalize feature calculation values between 0 and 1 for this column
+            normalized_values = (column_data - column_data.min()) / (column_data.max() - column_data.min())
+            
+            # Map normalized values to colors using a specified colormap
+            colormap = plt.get_cmap('viridis')
+            colors = (colormap(normalized_values) * 255).astype(int)  # Multiply by 255 to convert to QColor range
+            # Set background color for each item in the column
+            
+            for row in range(self.result.shape[0]):
+                color = QColor(colors[row][0], colors[row][1], colors[row][2], colors[row][3])
+                table.item(row, col).setBackground(color)
+            
+
+        self.viewer.window.add_dock_widget(win)
+
 
     def _run_calculate(self):
         """ Call correct calculates features. Should not be called directly.
@@ -225,7 +272,32 @@ class NyxusNapari:
         add_table(labels_layer, self.viewer)
         
         widget_table = get_table(labels_layer, self.viewer)
+
+        heatmap_button = QPushButton("Generate heatmap")
+        heatmap_button.clicked.connect(self.generate_heatmap)
         
+        widget_table.layout().addWidget(heatmap_button)
+
+        self.column_box = QLineEdit()
+        self.column_box.setPlaceholderText("Enter column from features (ex: mask_image)")
+        self.column_box.textChanged.connect(self.check_annotations_input)
+
+        self.filepattern_box = QLineEdit()
+        self.filepattern_box.setPlaceholderText("Enter filepattern (ex: r{r:d+}_c{c:d+}.tif)")
+        self.filepattern_box.textChanged.connect(self.check_annotations_input)
+
+        self.annotation_box = QLineEdit()
+        self.annotation_box.setPlaceholderText("Enter annotation to extract (ex:r)")
+        self.annotation_box.textChanged.connect(self.check_annotations_input)
+
+        self.annotation_button = QPushButton("Extract annotation")
+        self.annotation_button.clicked.connect(self.extract_annotation)
+
+        widget_table.layout().addWidget(self.column_box)
+        widget_table.layout().addWidget(self.filepattern_box)
+        widget_table.layout().addWidget(self.annotation_box)
+        widget_table.layout().addWidget(self.annotation_button)
+
         self.table = widget_table._view
         
         self.table.cellDoubleClicked.connect(self.cell_was_clicked)
@@ -236,7 +308,71 @@ class NyxusNapari:
         # add new label clicking event
         self.table.horizontalHeader().sectionDoubleClicked.connect(self.onHeaderClicked)
 
+    def check_annotations_input(self):
+
+        if self.column_box.text() and self.filepattern_box.text() and self.annotation_box.text():
+            self.annotation_button.setEnabled(True)
+        else:
+            self.annotation_button.setEnabled(False)
+
+    def generate_heatmap(self):
+        for col in range(3, self.result.shape[1]):
+            # Get the column data
+            column_data = self.result.iloc[:, col]
             
+            # Normalize feature calculation values between 0 and 1 for this column
+            normalized_values = (column_data - column_data.min()) / (column_data.max() - column_data.min())
+            
+            # Map normalized values to colors using a specified colormap
+            colormap = plt.get_cmap('viridis')
+            colors = (colormap(normalized_values) * 255).astype(int)  # Multiply by 255 to convert to QColor range
+            # Set background color for each item in the column
+            
+            for row in range(self.result.shape[0]):
+                color = QColor(colors[row][0], colors[row][1], colors[row][2], colors[row][3])
+                self.table.item(row, col).setBackground(color)
+
+    
+    def extract_annotation(self, event):
+        
+        column_name = self.column_box.text()
+        file_pattern = self.filepattern_box.text()
+        annotation = self.annotation_box.text()
+
+        print(file_pattern)
+                
+        # write filenames to txt file to feed into filepattern (todo: update filepattern to remove need for text file)
+        #with tempfile.NamedTemporaryFile(mode = "w") as tmpfilename:
+        with open("copy.txt", "w") as tmpfilename:
+            row_values = self.result[column_name].to_list()
+            print(row_values)
+            for row in row_values:
+                    tmpfilename.write(f"{row}\n")
+            
+        fp = FilePattern("copy.txt", file_pattern)
+            
+        found_annotations = []
+        for annotations, file in fp:
+            print(annotations)
+            print(file)
+            if annotation not in annotations:
+                continue
+            found_annotations.append(annotations[annotation])
+
+        print(found_annotations)
+
+        if (len(found_annotations) != len(row_values)):
+            show_info('Error extracting annotations. Check that the filenames match the filepattern.')
+            return
+
+        annotations_position = 3
+        self.table.insertColumn(annotations_position)
+
+        self.table.setHorizontalHeaderItem(annotations_position, QTableWidgetItem(annotation))
+
+        for row in range(self.table.rowCount()):
+            self.table.setItem(row, annotations_position, QTableWidgetItem(str(found_annotations[row])))
+
     def cell_was_clicked(self, event):
         
         if (self.batched):
