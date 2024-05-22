@@ -1,4 +1,4 @@
-from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem, QLineEdit, QLabel, QHBoxLayout, QPushButton
+from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem, QLineEdit, QLabel, QHBoxLayout, QPushButton, QComboBox
 from qtpy.QtCore import Qt, QTimer
 from qtpy import QtCore, QtGui, QtWidgets
 from qtpy.QtGui import QColor
@@ -169,47 +169,6 @@ class NyxusNapari:
         self.add_features_table()
 
 
-    def add_features_heatmap(self):
-
-        win = FeaturesWidget()
-        scroll = QScrollArea()
-        layout = QVBoxLayout()
-        table = QTableWidget()
-        scroll.setWidget(table)
-        layout.addWidget(table)
-        win.setLayout(layout)    
-        win.setWindowTitle("Feature Results 2")
-
-        # Add DataFrame to widget window
-        table.setColumnCount(len(self.result.columns))
-        table.setRowCount(len(self.result.index))
-        table.setHorizontalHeaderLabels(self.result.columns)
-        for i in range(len(self.result.index)):
-            for j in range(len(self.result.columns)):
-                table.setItem(i,j,QTableWidgetItem(str(self.result.iloc[i, j])))
-
-        #table.item(0,0).setBackground(QColor(0, 1, 1, 127))
-        #table.item(1,1).setBackground(QColor(255, 1, 1, 127))
-        for col in range(3, self.result.shape[1]):
-            # Get the column data
-            column_data = self.result.iloc[:, col]
-            
-            # Normalize feature calculation values between 0 and 1 for this column
-            normalized_values = (column_data - column_data.min()) / (column_data.max() - column_data.min())
-            
-            # Map normalized values to colors using a specified colormap
-            colormap = plt.get_cmap('viridis')
-            colors = (colormap(normalized_values) * 255).astype(int)  # Multiply by 255 to convert to QColor range
-            # Set background color for each item in the column
-            
-            for row in range(self.result.shape[0]):
-                color = QColor(colors[row][0], colors[row][1], colors[row][2], colors[row][3])
-                table.item(row, col).setBackground(color)
-            
-
-        self.viewer.window.add_dock_widget(win)
-
-
     def _run_calculate(self):
         """ Call correct calculates features. Should not be called directly.
         Used calling _calculate from woker threads instead of directly.
@@ -222,27 +181,56 @@ class NyxusNapari:
     
     #@thread_worker
     def _calculate(self):
-        """ Calculates the features using Nyxus
+        """ Calculates the features using Nyxus 
         """
         if (type(self.intensity.data) == dask.array.core.Array):
+            print("Calculating in out of core mode")
             self.batched = True
             self._calculate_out_of_core()
         else:
-            self.result = self.nyxus_object.featurize(self.intensity.data, self.segmentation.data)
+            print(self.intensity.name)
+            self.result = self.nyxus_object.featurize(self.intensity.data, self.segmentation.data, intensity_names=[self.intensity.name], label_names=[self.segmentation.name])
             
     
     def _calculate_out_of_core(self):
         """ Out of core calculations for when dataset size is larger than what Napari
         loads into memory
         """
-        results = []
-    
+        from os import walk
+        
+        filenames = next(walk(self.intensity.source.path), (None, None, []))[2]  
+        filenames.sort() # sort files to be in same order they appear in napari
+
+
+        self.result = None
+        names_index = 0
+
         for idx in np.ndindex(self.intensity.data.numblocks):
-            results.append(self.nyxus_object.featurize(
-                                self.intensity.data.blocks[idx].compute(), 
-                                self.segmentation.data.blocks[idx].compute()))
+
+            num_files = len(self.intensity.data.blocks[idx])
+            names = filenames[names_index:names_index + num_files]
+
+            if self.result is None:
+                self.result = self.nyxus_object.featurize(
+                    self.intensity.data.blocks[idx].compute(), 
+                    self.segmentation.data.blocks[idx].compute(),
+                    intensity_names=names,
+                    label_names=names
+                )
+                
+            else:
+                self.result = pd.concat([self.result, 
+                                         self.nyxus_object.featurize(
+                                            self.intensity.data.blocks[idx].compute(), 
+                                            self.segmentation.data.blocks[idx].compute(),
+                                            intensity_names=names,
+                                            label_names=names)], 
+                                         ignore_index=True)
             
-        self.result = pd.concat(results)
+            names_index += num_files
+
+            
+        #self.result = pd.concat(results, ignore_index=True)
     
     
     def add_features_table(self):
@@ -273,6 +261,12 @@ class NyxusNapari:
         
         widget_table = get_table(labels_layer, self.viewer)
 
+        self.heatmap_combobox = QComboBox()
+        self.heatmap_combobox.addItems(plt.colormaps()[:5])
+        self.heatmap_combobox.addItem('gray')
+
+        widget_table.layout().addWidget(self.heatmap_combobox)
+
         heatmap_button = QPushButton("Generate heatmap")
         heatmap_button.clicked.connect(self.generate_heatmap)
         
@@ -293,10 +287,20 @@ class NyxusNapari:
         self.annotation_button = QPushButton("Extract annotation")
         self.annotation_button.clicked.connect(self.extract_annotation)
 
+        self.sort_by_box = QLineEdit()
+        self.sort_by_box.setPlaceholderText("Enter column to sort rows by")
+        self.sort_by_box.textChanged.connect(self.check_sort_input)
+
+        self.sort_button = QPushButton("Sort")
+        self.sort_button.clicked.connect(self._sort)
+        
         widget_table.layout().addWidget(self.column_box)
         widget_table.layout().addWidget(self.filepattern_box)
         widget_table.layout().addWidget(self.annotation_box)
         widget_table.layout().addWidget(self.annotation_button)
+        widget_table.layout().addWidget(self.sort_by_box)
+        widget_table.layout().addWidget(self.sort_button)
+
 
         self.table = widget_table._view
         
@@ -308,12 +312,43 @@ class NyxusNapari:
         # add new label clicking event
         self.table.horizontalHeader().sectionDoubleClicked.connect(self.onHeaderClicked)
 
+    def check_sort_input(self):
+
+        if self.sort_by_box.text():
+            self.sort_button.setEnabled(True)
+        else:
+            self.sort_button.setEnabled(False)
+
     def check_annotations_input(self):
 
         if self.column_box.text() and self.filepattern_box.text() and self.annotation_box.text():
             self.annotation_button.setEnabled(True)
         else:
             self.annotation_button.setEnabled(False)
+    
+    def _sort(self):
+
+        sort_columns = self.sort_by_box.text().split()
+
+        # check if columns are valid
+        for column in sort_columns:
+            if column not in self.result.columns.to_list():
+                show_info(f'Column name \"{column}\" is not a valid column.')
+                return
+
+        if (len(sort_columns) == 1): # sort table in place if only one sorting column is passed
+            sort_column_index = self.result.columns.get_loc(sort_columns[0])
+
+            self.table.sortItems(sort_column_index)
+
+        else: # sort datafame when multiple columns are passed
+            
+            self.result.sort_values(by=sort_columns, ascending=[i % 2 == 0 for i in range(len(sort_columns))], inplace=True)
+
+            for row in range(self.result.shape[0]):
+                for col in range(self.result.shape[1]):
+                    self.table.setItem(row, col, QTableWidgetItem(str(self.result.iat[row, col])))
+
 
     def generate_heatmap(self):
         for col in range(3, self.result.shape[1]):
@@ -324,7 +359,7 @@ class NyxusNapari:
             normalized_values = (column_data - column_data.min()) / (column_data.max() - column_data.min())
             
             # Map normalized values to colors using a specified colormap
-            colormap = plt.get_cmap('viridis')
+            colormap = plt.get_cmap(self.heatmap_combobox.currentText())
             colors = (colormap(normalized_values) * 255).astype(int)  # Multiply by 255 to convert to QColor range
             # Set background color for each item in the column
             
@@ -344,7 +379,11 @@ class NyxusNapari:
         # write filenames to txt file to feed into filepattern (todo: update filepattern to remove need for text file)
         #with tempfile.NamedTemporaryFile(mode = "w") as tmpfilename:
         with open("copy.txt", "w") as tmpfilename:
-            row_values = self.result[column_name].to_list()
+            try:
+                row_values = self.result[column_name].to_list()
+            except:
+                show_info("Invalid column name")
+                return
             print(row_values)
             for row in row_values:
                     tmpfilename.write(f"{row}\n")
@@ -399,12 +438,12 @@ class NyxusNapari:
 
         for ix, iy in np.ndindex(self.seg.shape):
 
-            if (int(self.seg[ix, iy]) == int(value)):
+            if (int(self.seg[ix, iy]) == int(float(value))):
 
                 if (self.labels[ix, iy] != 0):
                     self.labels[ix, iy] = 0
                 else:
-                    self.labels[ix, iy] = int(value)
+                    self.labels[ix, iy] = int(float(value))
         
         if (not removed):
             self.current_label += 1
