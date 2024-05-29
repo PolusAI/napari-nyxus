@@ -270,9 +270,8 @@ class NyxusNapari:
         widget_table.layout().addWidget(heatmap_button)
 
         # add text box for selecting column for extracting annotations
-        self.column_box = QLineEdit()
-        self.column_box.setPlaceholderText("Enter column from features (ex: mask_image)")
-        self.column_box.textChanged.connect(self.check_annotations_input)
+        self.column_box = QComboBox()
+        self.column_box.addItems(['intensity_image', 'mask_image'])
 
         # text box for filepattern for extracting annotations
         self.filepattern_box = QLineEdit()
@@ -357,7 +356,7 @@ class NyxusNapari:
 
     def check_annotations_input(self):
 
-        if self.column_box.text() and self.filepattern_box.text() and self.annotation_box.text():
+        if self.filepattern_box.text() and self.annotation_box.text():
             self.annotation_button.setEnabled(True)
         else:
             self.annotation_button.setEnabled(False)
@@ -429,7 +428,7 @@ class NyxusNapari:
     def extract_annotation(self, event):
         import os
         
-        column_name = self.column_box.text()
+        column_name = self.column_box.currentText()
         file_pattern = self.filepattern_box.text()
         annotation = self.annotation_box.text()
                 
