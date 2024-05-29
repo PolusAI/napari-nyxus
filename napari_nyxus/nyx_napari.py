@@ -1,4 +1,4 @@
-from qtpy.QtWidgets import QWidget, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem, QLineEdit, QLabel, QHBoxLayout, QPushButton, QComboBox
+from qtpy.QtWidgets import QWidget, QCheckBox, QScrollArea, QTableWidget, QVBoxLayout,QTableWidgetItem, QLineEdit, QLabel, QHBoxLayout, QPushButton, QComboBox
 from qtpy.QtCore import Qt, QTimer
 from qtpy import QtCore, QtGui, QtWidgets
 from qtpy.QtGui import QColor
@@ -19,7 +19,8 @@ import tempfile
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 
-from napari_nyxus import util
+from napari_nyxus.util import util
+from napari_nyxus.util import rotated_header
 
 #from napari_nyxus.table import TableWidget, add_table, get_table
 from napari_skimage_regionprops import TableWidget, add_table, get_table
@@ -92,6 +93,8 @@ class NyxusNapari:
         
         self.labels_added = False
         
+        self.num_annotations = 0
+
         # Check for CUDA enable GPU if requested
         if (use_CUDA_Enabled_GPU):
             import subprocess
@@ -167,6 +170,7 @@ class NyxusNapari:
         show_info("Calculating features...")
         self._run_calculate()
         self.add_features_table()
+        self.is_heatmap_added = False
 
 
     def _run_calculate(self):
@@ -184,11 +188,9 @@ class NyxusNapari:
         """ Calculates the features using Nyxus 
         """
         if (type(self.intensity.data) == dask.array.core.Array):
-            print("Calculating in out of core mode")
             self.batched = True
             self._calculate_out_of_core()
         else:
-            print(self.intensity.name)
             self.result = self.nyxus_object.featurize(self.intensity.data, self.segmentation.data, intensity_names=[self.intensity.name], label_names=[self.segmentation.name])
             
     
@@ -198,7 +200,8 @@ class NyxusNapari:
         """
         from os import walk
         
-        filenames = next(walk(self.intensity.source.path), (None, None, []))[2]  
+        # Get files from directory and skip hidden files
+        filenames = [f for f in next(walk(self.intensity.source.path), (None, None, []))[2] if not f.startswith('.')]
         filenames.sort() # sort files to be in same order they appear in napari
 
 
@@ -210,6 +213,7 @@ class NyxusNapari:
             num_files = len(self.intensity.data.blocks[idx])
             names = filenames[names_index:names_index + num_files]
 
+            # set DataFrame value after first batch is processed
             if self.result is None:
                 self.result = self.nyxus_object.featurize(
                     self.intensity.data.blocks[idx].compute(), 
@@ -218,7 +222,7 @@ class NyxusNapari:
                     label_names=names
                 )
                 
-            else:
+            else: # Concat to first batch results
                 self.result = pd.concat([self.result, 
                                          self.nyxus_object.featurize(
                                             self.intensity.data.blocks[idx].compute(), 
@@ -241,6 +245,72 @@ class NyxusNapari:
 
         self._add_features_table()
 
+    def add_feature_calculation_table_options(self):
+        
+        # create window for feature calculation table functionality
+        win = FeaturesWidget()
+        scroll = QScrollArea()
+        layout = QVBoxLayout()
+        widget_table = QWidget()
+        widget_table.setLayout(layout)
+
+        # add combobox for selecting heatmap type
+        self.heatmap_combobox = QComboBox()
+        self.heatmap_combobox.addItems(plt.colormaps()[:5])
+        self.heatmap_combobox.addItem('gray')
+        widget_table.layout().addWidget(self.heatmap_combobox)
+
+        self.remove_number_checkbox = QCheckBox("Hide feature calculation values")
+        widget_table.layout().addWidget(self.remove_number_checkbox)
+        
+        # button to create heatmap
+        heatmap_button = QPushButton("Generate heatmap")
+        heatmap_button.clicked.connect(self.generate_heatmap)
+        
+        widget_table.layout().addWidget(heatmap_button)
+
+        # add text box for selecting column for extracting annotations
+        self.column_box = QLineEdit()
+        self.column_box.setPlaceholderText("Enter column from features (ex: mask_image)")
+        self.column_box.textChanged.connect(self.check_annotations_input)
+
+        # text box for filepattern for extracting annotations
+        self.filepattern_box = QLineEdit()
+        self.filepattern_box.setPlaceholderText("Enter filepattern (ex: r{r:d+}_c{c:d+}.tif)")
+        self.filepattern_box.textChanged.connect(self.check_annotations_input)
+
+        # add text box for selecting which filepattern variable to extract annotation
+        self.annotation_box = QLineEdit()
+        self.annotation_box.setPlaceholderText("Enter annotation to extract (ex:r)")
+        self.annotation_box.textChanged.connect(self.check_annotations_input)
+
+        self.annotation_button = QPushButton("Extract annotation")
+        self.annotation_button.clicked.connect(self.extract_annotation)
+
+        # add text for selecting column(s) to sort by
+        self.sort_by_box = QLineEdit()
+        self.sort_by_box.setPlaceholderText("Enter column to sort rows by")
+        self.sort_by_box.textChanged.connect(self.check_sort_input)
+
+        # add button for sorting columns
+        self.sort_button = QPushButton("Sort")
+        self.sort_button.clicked.connect(self._sort)
+        
+        # add widgets for feature calculations table
+        widget_table.layout().addWidget(self.column_box)
+        widget_table.layout().addWidget(self.filepattern_box)
+        widget_table.layout().addWidget(self.annotation_box)
+        widget_table.layout().addWidget(self.annotation_button)
+        widget_table.layout().addWidget(self.sort_by_box)
+        widget_table.layout().addWidget(self.sort_button)
+        
+        scroll.setWidget(widget_table)
+        win.setLayout(layout)    
+        win.setWindowTitle("Feature Table Options")
+
+
+        self.viewer.window.add_dock_widget(win)
+
     
     def _add_features_table(self):   
         """ Adds table to Napari viewer
@@ -261,56 +331,22 @@ class NyxusNapari:
         
         widget_table = get_table(labels_layer, self.viewer)
 
-        self.heatmap_combobox = QComboBox()
-        self.heatmap_combobox.addItems(plt.colormaps()[:5])
-        self.heatmap_combobox.addItem('gray')
-
-        widget_table.layout().addWidget(self.heatmap_combobox)
-
-        heatmap_button = QPushButton("Generate heatmap")
-        heatmap_button.clicked.connect(self.generate_heatmap)
-        
-        widget_table.layout().addWidget(heatmap_button)
-
-        self.column_box = QLineEdit()
-        self.column_box.setPlaceholderText("Enter column from features (ex: mask_image)")
-        self.column_box.textChanged.connect(self.check_annotations_input)
-
-        self.filepattern_box = QLineEdit()
-        self.filepattern_box.setPlaceholderText("Enter filepattern (ex: r{r:d+}_c{c:d+}.tif)")
-        self.filepattern_box.textChanged.connect(self.check_annotations_input)
-
-        self.annotation_box = QLineEdit()
-        self.annotation_box.setPlaceholderText("Enter annotation to extract (ex:r)")
-        self.annotation_box.textChanged.connect(self.check_annotations_input)
-
-        self.annotation_button = QPushButton("Extract annotation")
-        self.annotation_button.clicked.connect(self.extract_annotation)
-
-        self.sort_by_box = QLineEdit()
-        self.sort_by_box.setPlaceholderText("Enter column to sort rows by")
-        self.sort_by_box.textChanged.connect(self.check_sort_input)
-
-        self.sort_button = QPushButton("Sort")
-        self.sort_button.clicked.connect(self._sort)
-        
-        widget_table.layout().addWidget(self.column_box)
-        widget_table.layout().addWidget(self.filepattern_box)
-        widget_table.layout().addWidget(self.annotation_box)
-        widget_table.layout().addWidget(self.annotation_button)
-        widget_table.layout().addWidget(self.sort_by_box)
-        widget_table.layout().addWidget(self.sort_button)
-
-
         self.table = widget_table._view
+
+        self.table.setHorizontalHeader(rotated_header.RotatedHeaderView(self.table))
         
         self.table.cellDoubleClicked.connect(self.cell_was_clicked)
 
         # remove label clicking event to use our own
-        widget_table._layer.mouse_drag_callbacks.remove(widget_table._clicked_labels)
-        
+        try:
+            widget_table._layer.mouse_drag_callbacks.remove(widget_table._clicked_labels)
+        except:
+            print('No mouse drag event to remove')
+
         # add new label clicking event
         self.table.horizontalHeader().sectionDoubleClicked.connect(self.onHeaderClicked)
+
+        self.add_feature_calculation_table_options()
 
     def check_sort_input(self):
 
@@ -343,74 +379,101 @@ class NyxusNapari:
 
         else: # sort datafame when multiple columns are passed
             
-            self.result.sort_values(by=sort_columns, ascending=[i % 2 == 0 for i in range(len(sort_columns))], inplace=True)
+            #self.result.sort_values(by=sort_columns, ascending=[i % 2 == 0 for i in range(len(sort_columns))], inplace=True)
+            self.result.sort_values(by=sort_columns, inplace=True)
 
             for row in range(self.result.shape[0]):
                 for col in range(self.result.shape[1]):
                     self.table.setItem(row, col, QTableWidgetItem(str(self.result.iat[row, col])))
 
+            if self.is_heatmap_added:
+                self.generate_heatmap()
+
 
     def generate_heatmap(self):
-        for col in range(3, self.result.shape[1]):
+
+        remove = self.remove_number_checkbox.isChecked()
+
+        if remove:
+            row_height = self.table.rowHeight(1)
+            column_width = self.table.columnWidth(1)
+
+            width = min(row_height, column_width)
+
+            self.table.horizontalHeader().setDefaultSectionSize(width)
+            self.table.verticalHeader().setDefaultSectionSize(width)
+
+
+        for col in range(3 + self.num_annotations, self.result.shape[1]):
+
             # Get the column data
             column_data = self.result.iloc[:, col]
             
             # Normalize feature calculation values between 0 and 1 for this column
             normalized_values = (column_data - column_data.min()) / (column_data.max() - column_data.min())
-            
+
             # Map normalized values to colors using a specified colormap
             colormap = plt.get_cmap(self.heatmap_combobox.currentText())
             colors = (colormap(normalized_values) * 255).astype(int)  # Multiply by 255 to convert to QColor range
             # Set background color for each item in the column
             
-            for row in range(self.result.shape[0]):
-                color = QColor(colors[row][0], colors[row][1], colors[row][2], colors[row][3])
-                self.table.item(row, col).setBackground(color)
+            for row in range(self.result.shape[0]): 
 
+                if remove:
+                    self.table.item(row, col).setText('') # remove feature calculation value from cell
+
+                self.table.item(row, col).setBackground(QColor(colors[row][0], colors[row][1], colors[row][2], colors[row][3]))
+
+            self.is_heatmap_added = True
     
     def extract_annotation(self, event):
+        import os
         
         column_name = self.column_box.text()
         file_pattern = self.filepattern_box.text()
         annotation = self.annotation_box.text()
-
-        print(file_pattern)
                 
         # write filenames to txt file to feed into filepattern (todo: update filepattern to remove need for text file)
-        #with tempfile.NamedTemporaryFile(mode = "w") as tmpfilename:
-        with open("copy.txt", "w") as tmpfilename:
+        # use temp directory to allow filepattern (another process) to open temp file on Windows
+        with tempfile.TemporaryDirectory() as td:
+            f_name = os.path.join(td, 'rows')
             try:
                 row_values = self.result[column_name].to_list()
             except:
                 show_info("Invalid column name")
                 return
-            print(row_values)
-            for row in row_values:
-                    tmpfilename.write(f"{row}\n")
+            with open(f_name, 'w') as fh:
+                for row in row_values:
+                        fh.write(f"{row}\n")
             
-        fp = FilePattern("copy.txt", file_pattern)
-            
-        found_annotations = []
-        for annotations, file in fp:
-            print(annotations)
-            print(file)
-            if annotation not in annotations:
-                continue
-            found_annotations.append(annotations[annotation])
-
-        print(found_annotations)
+            fp = FilePattern(f_name, file_pattern)
+                
+            found_annotations = []
+            for annotations, file in fp:
+                if annotation not in annotations:
+                    continue
+                found_annotations.append(annotations[annotation])
 
         if (len(found_annotations) != len(row_values)):
             show_info('Error extracting annotations. Check that the filenames match the filepattern.')
             return
 
         annotations_position = 3
+
+        try:
+            self.result.insert(annotations_position, annotation, found_annotations, allow_duplicates=False)
+        except:
+            show_info("Error inserting annotations column. Check that the name of the annotations column is unique.")
+            return
+
         self.table.insertColumn(annotations_position)
 
         self.table.setHorizontalHeaderItem(annotations_position, QTableWidgetItem(annotation))
 
         for row in range(self.table.rowCount()):
             self.table.setItem(row, annotations_position, QTableWidgetItem(str(found_annotations[row])))
+
+        self.num_annotations += 1
 
     def cell_was_clicked(self, event):
         
