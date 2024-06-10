@@ -294,6 +294,13 @@ class NyxusNapari:
         # add button for sorting columns
         self.sort_button = QPushButton("Sort")
         self.sort_button.clicked.connect(self._sort)
+
+        # add button for sorting columns
+        self.corr_button = QPushButton("Generate correlation")
+        self.corr_button.clicked.connect(self._get_correlation)
+        
+        # add widgets for feature calculations table
+        widget_table.layout().addWidget(self.corr_button)
         
         # add widgets for feature calculations table
         widget_table.layout().addWidget(self.column_box)
@@ -662,5 +669,48 @@ class NyxusNapari:
         
         except:
             return
+        
+    def _get_correlation(self):
+
+        self.corr = self.result.iloc[:, 3:].corr()
+
+        self.win = FeaturesWidget()
+        scroll = QScrollArea()
+        layout = QVBoxLayout()
+        corr_table = QTableWidget()
+        scroll.setWidget(corr_table)
+        layout.addWidget(corr_table)
+        self.win.setLayout(layout)    
+        self.win.setWindowTitle("Feature Results")
+
+        # Add DataFrame to widget window
+        corr_table.setColumnCount(len(self.corr.columns))
+        corr_table.setRowCount(len(self.corr.index))
+        corr_table.setHorizontalHeaderLabels(self.corr.columns)
+        corr_table.setHorizontalHeader(rotated_header.RotatedHeaderView(corr_table))
+        corr_table.setVerticalHeaderLabels(self.corr.columns)
+        
+        row_height = corr_table.rowHeight(1)
+        column_width = corr_table.columnWidth(1)
+
+        width = min(row_height, column_width)
+
+        corr_table.horizontalHeader().setDefaultSectionSize(width)
+        corr_table.verticalHeader().setDefaultSectionSize(width)
+
+
+        for col in range(self.corr.shape[1]):
+
+            # Get the column data
+            column_data = self.corr.iloc[:, col]
+
+            # Map normalized values to colors using a specified colormap
+            colormap = plt.get_cmap('magma')
+            colors = (colormap(column_data) * 255).astype(int)  # Multiply by 255 to convert to QColor range
+            # Set background color for each item in the column
             
-    
+            for row in range(self.corr.shape[0]): 
+                corr_table.setItem(row,col,QTableWidgetItem(''))
+                corr_table.item(row, col).setBackground(QColor(colors[row][0], colors[row][1], colors[row][2], colors[row][3]))
+
+        self.viewer.window.add_dock_widget(self.win)    
