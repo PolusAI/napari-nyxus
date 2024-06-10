@@ -107,3 +107,19 @@ including annotations.
 
 After clicking ``Sort``, the table will be sorted by the selected column. To sort by multiple columns, enter the columns into the box in order, separated by
 spaces.
+
+Creating a Correlogram
+=====================================
+
+To create a correlogram (or correlation matrix) of the feature calculations, first run nyxus on a set of image-segmentation pair(s). Next, click the ``Generate Correlogram``
+button.
+
+.. image:: https://github.com/PolusAI/napari-nyxus/raw/main/docs/source/img/correlation.png
+
+After clicking this button, a new table will be adding to the napari viewer. To view this table, drag the table out of the napari viewer and expand the window. The result 
+is shown below. 
+
+.. image:: https://github.com/PolusAI/napari-nyxus/raw/main/docs/source/img/correlation_result.png
+
+The result is a correlation matrix between each of the averaged features between every row of the feature calculation results. Note that the diagonal is 1 since a feature 
+is fully correlated to itself. 
