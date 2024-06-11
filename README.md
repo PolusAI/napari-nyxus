@@ -110,7 +110,7 @@ that contains the ROIs who's features values fall within the slider values.
 
 The new labels resulting from the range slider selector can then be used to run Nyxus on by using the labels image as the `Segmentation` parameter.
 
-![](docs/source/img/run_on_colormap_labels.png)
+![](https://github.com/PolusAI/napari-nyxus/raw/main/docs/source/img/run_on_colormap_labels.png)
 
 # Limitations
 
